@@ -205,3 +205,74 @@ func (ctrl *MessageController) GetRecentConversations(c *gin.Context) {
 	})
 }
 
+// EditMessage updates a message content
+func (ctrl *MessageController) EditMessage(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	messageID, err := uuid.Parse(c.Param("message_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid message id",
+		})
+		return
+	}
+
+	var req services.EditMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	message, err := ctrl.messageService.EditMessage(messageID, userID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "message updated",
+		"data":    message,
+	})
+}
+
+// DeleteMessage marks a message as deleted
+func (ctrl *MessageController) DeleteMessage(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	messageID, err := uuid.Parse(c.Param("message_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid message id",
+		})
+		return
+	}
+
+	message, err := ctrl.messageService.DeleteMessage(messageID, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "message deleted",
+		"data":    message,
+	})
+}

@@ -2,8 +2,10 @@ package services
 
 import (
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
+
 	"mms-backend/models"
 	"mms-backend/repositories"
 	"mms-backend/utils"
@@ -36,6 +38,11 @@ func NewMessageService(
 type SendMessageRequest struct {
 	ReceiverID uuid.UUID `json:"receiver_id" binding:"required"`
 	Content    string    `json:"content" binding:"required"`
+}
+
+// EditMessageRequest represents a message edit request
+type EditMessageRequest struct {
+	Content string `json:"content" binding:"required"`
 }
 
 // SendMessage sends a message from one user to another
@@ -90,13 +97,16 @@ func (s *MessageService) SendMessage(senderID uuid.UUID, req SendMessageRequest)
 
 	// Return decrypted message response
 	return &models.MessageResponse{
-		ID:         message.ID,
-		SenderID:   message.SenderID,
-		ReceiverID: message.ReceiverID,
-		Content:    req.Content, // Original unencrypted content
-		IsRead:     message.IsRead,
-		CreatedAt:  message.CreatedAt,
-		Sender:     sender.ToPublicUser(),
+		ID:              message.ID,
+		SenderID:        message.SenderID,
+		ReceiverID:      message.ReceiverID,
+		Content:         req.Content, // Original unencrypted content
+		IsRead:          message.IsRead,
+		CreatedAt:       message.CreatedAt,
+		IsDeleted:       message.IsDeleted,
+		Edited:          message.Edited,
+		PreviousContent: "",
+		Sender:          sender.ToPublicUser(),
 	}, nil
 }
 
@@ -116,15 +126,33 @@ func (s *MessageService) GetConversation(userID1, userID2 uuid.UUID, limit, offs
 			decryptedContent = "[Encrypted]"
 		}
 
+		previousContent := ""
+		if msg.PreviousContent != "" {
+			if prev, err := utils.Decrypt(msg.PreviousContent); err == nil {
+				previousContent = prev
+			}
+		}
+
+		displayContent := decryptedContent
+		if msg.IsDeleted {
+			displayContent = "[message deleted]"
+		}
+
 		responses = append(responses, models.MessageResponse{
-			ID:         msg.ID,
-			SenderID:   msg.SenderID,
-			ReceiverID: msg.ReceiverID,
-			Content:    decryptedContent,
-			IsRead:     msg.IsRead,
-			ReadAt:     msg.ReadAt,
-			CreatedAt:  msg.CreatedAt,
-			Sender:     msg.Sender.ToPublicUser(),
+			ID:              msg.ID,
+			SenderID:        msg.SenderID,
+			ReceiverID:      msg.ReceiverID,
+			Content:         displayContent,
+			IsRead:          msg.IsRead,
+			ReadAt:          msg.ReadAt,
+			IsDeleted:       msg.IsDeleted,
+			DeletedAt:       msg.DeletedAt,
+			DeletedBy:       msg.DeletedBy,
+			Edited:          msg.Edited,
+			EditedAt:        msg.EditedAt,
+			PreviousContent: previousContent,
+			CreatedAt:       msg.CreatedAt,
+			Sender:          msg.Sender.ToPublicUser(),
 		})
 	}
 
@@ -156,18 +184,117 @@ func (s *MessageService) GetRecentConversations(userID uuid.UUID, limit int) ([]
 	return publicUsers, nil
 }
 
-// DeleteMessage deletes a message
-func (s *MessageService) DeleteMessage(messageID, userID uuid.UUID) error {
-	// Verify the message belongs to the user (either sender or receiver)
+// EditMessage updates the content of a message
+func (s *MessageService) EditMessage(messageID, userID uuid.UUID, req EditMessageRequest) (*models.MessageResponse, error) {
+	if req.Content == "" {
+		return nil, errors.New("content cannot be empty")
+	}
+
 	message, err := s.messageRepo.FindByID(messageID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if message.SenderID != userID && message.ReceiverID != userID {
-		return errors.New("unauthorized to delete this message")
+	if message.SenderID != userID {
+		return nil, errors.New("unauthorized to edit this message")
 	}
 
-	return s.messageRepo.Delete(messageID)
+	if message.IsDeleted {
+		return nil, errors.New("cannot edit a deleted message")
+	}
+
+	previousEncrypted := message.Content
+	previousDecrypted, err := utils.Decrypt(previousEncrypted)
+	if err != nil {
+		previousDecrypted = "[Encrypted]"
+	}
+
+	newEncrypted, err := utils.Encrypt(req.Content)
+	if err != nil {
+		return nil, errors.New("failed to encrypt message")
+	}
+
+	if err := s.messageRepo.UpdateContent(messageID, newEncrypted, previousEncrypted); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	message.Content = newEncrypted
+	message.PreviousContent = previousEncrypted
+	message.Edited = true
+	message.EditedAt = &now
+
+	sender := message.Sender
+	if sender.ID == uuid.Nil {
+		if user, err := s.userRepo.FindByID(message.SenderID); err == nil {
+			sender = *user
+		}
+	}
+
+	return &models.MessageResponse{
+		ID:              message.ID,
+		SenderID:        message.SenderID,
+		ReceiverID:      message.ReceiverID,
+		Content:         req.Content,
+		IsRead:          message.IsRead,
+		ReadAt:          message.ReadAt,
+		IsDeleted:       message.IsDeleted,
+		DeletedAt:       message.DeletedAt,
+		DeletedBy:       message.DeletedBy,
+		Edited:          true,
+		EditedAt:        &now,
+		PreviousContent: previousDecrypted,
+		CreatedAt:       message.CreatedAt,
+		Sender:          sender.ToPublicUser(),
+	}, nil
 }
 
+// DeleteMessage marks a message as deleted
+func (s *MessageService) DeleteMessage(messageID, userID uuid.UUID) (*models.MessageResponse, error) {
+	message, err := s.messageRepo.FindByID(messageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if message.SenderID != userID {
+		return nil, errors.New("unauthorized to delete this message")
+	}
+
+	if message.IsDeleted {
+		return nil, errors.New("message already deleted")
+	}
+
+	if err := s.messageRepo.SoftDelete(messageID, userID); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	message.IsDeleted = true
+	message.DeletedAt = &now
+	message.DeletedBy = &userID
+
+	previousDecrypted := ""
+	sender := message.Sender
+	if sender.ID == uuid.Nil {
+		if user, err := s.userRepo.FindByID(message.SenderID); err == nil {
+			sender = *user
+		}
+	}
+
+	return &models.MessageResponse{
+		ID:              message.ID,
+		SenderID:        message.SenderID,
+		ReceiverID:      message.ReceiverID,
+		Content:         "[message deleted]",
+		IsRead:          message.IsRead,
+		ReadAt:          message.ReadAt,
+		IsDeleted:       true,
+		DeletedAt:       message.DeletedAt,
+		DeletedBy:       message.DeletedBy,
+		Edited:          message.Edited,
+		EditedAt:        message.EditedAt,
+		PreviousContent: previousDecrypted,
+		CreatedAt:       message.CreatedAt,
+		Sender:          sender.ToPublicUser(),
+	}, nil
+}

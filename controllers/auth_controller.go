@@ -85,6 +85,63 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 	})
 }
 
+// CheckUsername checks username availability
+func (ctrl *AuthController) CheckUsername(c *gin.Context) {
+	var req struct {
+		Username string `json:"username" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	available, err := ctrl.authService.CheckUsernameAvailability(req.Username)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"available": available})
+}
+
+// CheckEmail checks email availability
+func (ctrl *AuthController) CheckEmail(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	available, err := ctrl.authService.CheckEmailAvailability(req.Email)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"available": available})
+}
+
+// CheckPhone checks phone availability
+func (ctrl *AuthController) CheckPhone(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	available, err := ctrl.authService.CheckPhoneAvailability(req.Phone)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"available": available})
+}
+
 // GetMe returns current user info
 // @Summary Get current user
 // @Tags auth
@@ -104,7 +161,7 @@ func (ctrl *AuthController) GetMe(c *gin.Context) {
 	// Get token from header and validate to get user info
 	token := c.GetHeader("Authorization")
 	token = token[len("Bearer "):]
-	
+
 	user, err := ctrl.authService.ValidateToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -125,4 +182,3 @@ func (ctrl *AuthController) GetMe(c *gin.Context) {
 		"data": user.ToPublicUser(),
 	})
 }
-

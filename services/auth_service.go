@@ -163,6 +163,61 @@ func (s *AuthService) Logout(userID string) error {
 	return nil
 }
 
+// CheckUsernameAvailability verifies if a username is available
+func (s *AuthService) CheckUsernameAvailability(username string) (bool, error) {
+	if err := utils.ValidateUsername(username); err != nil {
+		return false, err
+	}
+
+	_, err := s.userRepo.FindByUsername(username)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
+}
+
+// CheckEmailAvailability verifies if an email is available
+func (s *AuthService) CheckEmailAvailability(email string) (bool, error) {
+	if err := utils.ValidateEmail(email); err != nil {
+		return false, err
+	}
+
+	_, err := s.userRepo.FindByEmail(email)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
+}
+
+// CheckPhoneAvailability verifies if a phone number is available
+func (s *AuthService) CheckPhoneAvailability(phone string) (bool, error) {
+	if phone == "" {
+		return false, errors.New("phone is required")
+	}
+
+	if err := utils.ValidatePhone(phone); err != nil {
+		return false, err
+	}
+
+	_, err := s.userRepo.FindByPhone(phone)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
+}
+
 // ValidateToken validates a JWT token and returns user info
 func (s *AuthService) ValidateToken(token string) (*models.User, error) {
 	claims, err := utils.ValidateToken(token)
@@ -177,4 +232,3 @@ func (s *AuthService) ValidateToken(token string) (*models.User, error) {
 
 	return user, nil
 }
-

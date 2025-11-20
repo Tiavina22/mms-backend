@@ -102,9 +102,9 @@ func (r *MessageRepository) GetRecentConversations(userID uuid.UUID, limit int) 
 		UserID      uuid.UUID
 		LastMessage time.Time
 	}
-	
+
 	var conversations []ConversationUser
-	
+
 	// Get user IDs with last message time
 	err := r.db.Model(&models.Message{}).
 		Select("CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as user_id, MAX(created_at) as last_message", userID).
@@ -113,23 +113,46 @@ func (r *MessageRepository) GetRecentConversations(userID uuid.UUID, limit int) 
 		Order("last_message DESC").
 		Limit(limit).
 		Scan(&conversations).Error
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Extract user IDs
 	var userIDs []uuid.UUID
 	for _, conv := range conversations {
 		userIDs = append(userIDs, conv.UserID)
 	}
-	
+
 	// Get user details
 	var users []models.User
 	if len(userIDs) > 0 {
 		err = r.db.Where("id IN ?", userIDs).Find(&users).Error
 	}
-	
+
 	return users, err
 }
 
+// UpdateContent updates message content and tracks previous content
+func (r *MessageRepository) UpdateContent(messageID uuid.UUID, newEncryptedContent string, previousEncryptedContent string) error {
+	return r.db.Model(&models.Message{}).
+		Where("id = ?", messageID).
+		Updates(map[string]interface{}{
+			"content":          newEncryptedContent,
+			"previous_content": previousEncryptedContent,
+			"edited":           true,
+			"edited_at":        time.Now(),
+		}).Error
+}
+
+// SoftDelete marks a message as deleted without removing it
+func (r *MessageRepository) SoftDelete(messageID, userID uuid.UUID) error {
+	now := time.Now()
+	return r.db.Model(&models.Message{}).
+		Where("id = ?", messageID).
+		Updates(map[string]interface{}{
+			"is_deleted": true,
+			"deleted_at": now,
+			"deleted_by": userID,
+		}).Error
+}

@@ -32,6 +32,9 @@ func SetupRoutes(
 		{
 			auth.POST("/signup", authController.Signup)
 			auth.POST("/login", authController.Login)
+			auth.POST("/check-username", authController.CheckUsername)
+			auth.POST("/check-email", authController.CheckEmail)
+			auth.POST("/check-phone", authController.CheckPhone)
 		}
 
 		// Protected routes (authentication required)
@@ -57,6 +60,8 @@ func SetupRoutes(
 				messages.GET("/conversation/:user_id", messageController.GetConversation)
 				messages.PUT("/read/:user_id", messageController.MarkAsRead)
 				messages.GET("/unread/count", messageController.GetUnreadCount)
+				messages.PUT("/:message_id", messageController.EditMessage)
+				messages.DELETE("/:message_id", messageController.DeleteMessage)
 			}
 
 			// Group routes
