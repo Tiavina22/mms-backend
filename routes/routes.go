@@ -68,6 +68,9 @@ func SetupRoutes(
 				groups.DELETE("/:group_id", groupController.DeleteGroup)
 				groups.GET("/:group_id/messages", groupController.GetGroupMessages)
 				groups.POST("/messages", groupController.SendGroupMessage)
+				groups.GET("/:group_id/members", groupController.GetGroupMembers)
+				groups.POST("/:group_id/members", groupController.AddGroupMember)
+				groups.DELETE("/:group_id/members/:user_id", groupController.RemoveGroupMember)
 			}
 
 			// WebSocket route (protected)

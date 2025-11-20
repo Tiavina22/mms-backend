@@ -1,8 +1,8 @@
-# 📡 API Examples - MMS Backend
+# API Examples - MMS Backend
 
 Exemples d'utilisation de l'API avec curl.
 
-## 🔐 Authentication
+## Authentication
 
 ### Signup (Inscription)
 
@@ -56,7 +56,7 @@ curl http://localhost:8080/api/v1/auth/me \
 
 ---
 
-## 👥 Users
+## Users
 
 ### List Users
 
@@ -81,7 +81,7 @@ curl http://localhost:8080/api/v1/users/USER_UUID \
 
 ---
 
-## 💬 Direct Messages
+## Direct Messages
 
 ### Send Message
 
@@ -125,7 +125,7 @@ curl http://localhost:8080/api/v1/messages/unread/count \
 
 ---
 
-## 👥 Groups
+## Groups
 
 ### Create Group
 
@@ -183,7 +183,7 @@ curl -X DELETE http://localhost:8080/api/v1/groups/GROUP_UUID \
 
 ---
 
-## 🌐 WebSocket
+## WebSocket
 
 ### Connect to WebSocket
 
@@ -274,7 +274,7 @@ ws.onmessage = (event) => {
 
 ---
 
-## 🧪 Testing with Variables
+## Testing with Variables
 
 **Set Token Variable (Bash):**
 ```bash
@@ -306,7 +306,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/v1/auth/me" `
 
 ---
 
-## 📋 Complete Workflow Example
+## Complete Workflow Example
 
 ```bash
 # 1. Signup Alice
@@ -349,7 +349,7 @@ curl "http://localhost:8080/api/v1/messages/conversation/$ALICE_ID" \
 
 ---
 
-## 🔒 Security Notes
+## Security Notes
 
 - **Toujours utiliser HTTPS** en production
 - **Ne jamais exposer** votre JWT token
@@ -359,7 +359,7 @@ curl "http://localhost:8080/api/v1/messages/conversation/$ALICE_ID" \
 
 ---
 
-## 🐛 Error Responses
+## Error Responses
 
 ```json
 // Unauthorized (401)
@@ -385,5 +385,5 @@ curl "http://localhost:8080/api/v1/messages/conversation/$ALICE_ID" \
 
 ---
 
-**📖 Plus d'infos**: Voir [README.md](README.md) pour la documentation complète.
+** Plus d'infos**: Voir [README.md](README.md) pour la documentation complète.
 

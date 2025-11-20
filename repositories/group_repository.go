@@ -134,6 +134,15 @@ func (r *GroupRepository) IsAdmin(groupID, userID uuid.UUID) (bool, error) {
 	return count > 0, err
 }
 
+// IsCreator checks if a user is the creator of a group
+func (r *GroupRepository) IsCreator(groupID, userID uuid.UUID) (bool, error) {
+	var count int64
+	err := r.db.Model(&models.Group{}).
+		Where("id = ? AND created_by = ?", groupID, userID).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // GetGroupMembers returns all members of a group
 func (r *GroupRepository) GetGroupMembers(groupID uuid.UUID) ([]models.GroupMember, error) {
 	var members []models.GroupMember

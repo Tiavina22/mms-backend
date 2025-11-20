@@ -3,10 +3,11 @@ package services
 import (
 	"errors"
 
-	"github.com/google/uuid"
 	"mms-backend/models"
 	"mms-backend/repositories"
 	"mms-backend/utils"
+
+	"github.com/google/uuid"
 )
 
 // GroupService handles group business logic
@@ -37,10 +38,10 @@ func NewGroupService(
 
 // CreateGroupRequest represents a group creation request
 type CreateGroupRequest struct {
-	Name        string            `json:"name" binding:"required"`
-	Description string            `json:"description"`
-	Type        models.GroupType  `json:"type"`
-	MemberIDs   []uuid.UUID       `json:"member_ids"`
+	Name        string           `json:"name" binding:"required"`
+	Description string           `json:"description"`
+	Type        models.GroupType `json:"type"`
+	MemberIDs   []uuid.UUID      `json:"member_ids"`
 }
 
 // SendGroupMessageRequest represents a group message send request
@@ -241,9 +242,21 @@ func (s *GroupService) GetGroupMessages(groupID, userID uuid.UUID, limit, offset
 
 // AddMember adds a member to a group
 func (s *GroupService) AddMember(groupID, userID, newMemberID uuid.UUID) error {
-	// Check if requester is an admin
+	// Get group to check creator
+	group, err := s.groupRepo.FindByID(groupID)
+	if err != nil {
+		return err
+	}
+
+	// Check if requester is an admin or creator
 	isAdmin, err := s.groupRepo.IsAdmin(groupID, userID)
-	if err != nil || !isAdmin {
+	if err != nil {
+		return err
+	}
+
+	isCreator := group.CreatedBy == userID
+
+	if !isAdmin && !isCreator {
 		return errors.New("only admins can add members")
 	}
 
@@ -259,9 +272,21 @@ func (s *GroupService) AddMember(groupID, userID, newMemberID uuid.UUID) error {
 
 // RemoveMember removes a member from a group
 func (s *GroupService) RemoveMember(groupID, userID, memberID uuid.UUID) error {
-	// Check if requester is an admin
+	// Get group to check creator
+	group, err := s.groupRepo.FindByID(groupID)
+	if err != nil {
+		return err
+	}
+
+	// Check if requester is an admin or creator
 	isAdmin, err := s.groupRepo.IsAdmin(groupID, userID)
-	if err != nil || !isAdmin {
+	if err != nil {
+		return err
+	}
+
+	isCreator := group.CreatedBy == userID
+
+	if !isAdmin && !isCreator {
 		return errors.New("only admins can remove members")
 	}
 
@@ -271,6 +296,31 @@ func (s *GroupService) RemoveMember(groupID, userID, memberID uuid.UUID) error {
 // GetUserGroups gets all groups a user belongs to
 func (s *GroupService) GetUserGroups(userID uuid.UUID) ([]models.Group, error) {
 	return s.groupRepo.GetUserGroups(userID)
+}
+
+// GetGroupMembers gets all members of a group
+func (s *GroupService) GetGroupMembers(groupID, userID uuid.UUID) ([]models.User, error) {
+	// Check if user is a member of the group
+	isMember, err := s.groupRepo.IsMember(groupID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !isMember {
+		return nil, errors.New("only members can view group members")
+	}
+
+	members, err := s.groupRepo.GetGroupMembers(groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract users from group members
+	users := make([]models.User, 0, len(members))
+	for _, member := range members {
+		users = append(users, member.User)
+	}
+
+	return users, nil
 }
 
 // DeleteGroup deletes a group
@@ -287,4 +337,3 @@ func (s *GroupService) DeleteGroup(groupID, userID uuid.UUID) error {
 
 	return s.groupRepo.Delete(groupID)
 }
-
