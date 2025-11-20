@@ -85,6 +85,9 @@ func (c *Client) readPump() {
 		case "new_group_message":
 			// Group message - broadcast to group members
 			c.Hub.groupMessage <- &msg
+		case "message_read":
+			// Read receipt - notify specific user
+			c.Hub.directMessage <- &msg
 		case "typing":
 			// Typing indicator
 			c.Hub.broadcast <- messageData

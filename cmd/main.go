@@ -51,10 +51,15 @@ func main() {
 	groupMessageRepo := repositories.NewGroupMessageRepository(db)
 	notificationRepo := repositories.NewNotificationRepository(db)
 
+	// Initialize WebSocket hub first (needed by services)
+	hub := websocket.NewHub()
+	go hub.Run()
+	wsHandler := websocket.NewHandler(hub)
+
 	// Initialize services
 	pushService := services.NewPushService(cfg)
 	authService := services.NewAuthService(userRepo)
-	messageService := services.NewMessageService(messageRepo, userRepo, notificationRepo, pushService)
+	messageService := services.NewMessageService(messageRepo, userRepo, notificationRepo, pushService, hub)
 	groupService := services.NewGroupService(groupRepo, groupMessageRepo, userRepo, notificationRepo, pushService)
 
 	// Initialize controllers
@@ -62,11 +67,6 @@ func main() {
 	userController := controllers.NewUserController(userRepo)
 	messageController := controllers.NewMessageController(messageService)
 	groupController := controllers.NewGroupController(groupService)
-
-	// Initialize WebSocket hub
-	hub := websocket.NewHub()
-	go hub.Run()
-	wsHandler := websocket.NewHandler(hub)
 
 	log.Println("WebSocket hub started")
 

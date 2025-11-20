@@ -14,6 +14,12 @@ type MessageRepository struct {
 	db *gorm.DB
 }
 
+// ConversationPartner represents another user in a conversation and the last message timestamp
+type ConversationPartner struct {
+	UserID      uuid.UUID
+	LastMessage time.Time
+}
+
 // NewMessageRepository creates a new message repository
 func NewMessageRepository(db *gorm.DB) *MessageRepository {
 	return &MessageRepository{db: db}
@@ -96,16 +102,10 @@ func (r *MessageRepository) Delete(id uuid.UUID) error {
 	return r.db.Delete(&models.Message{}, id).Error
 }
 
-// GetRecentConversations gets list of users with recent conversations
-func (r *MessageRepository) GetRecentConversations(userID uuid.UUID, limit int) ([]models.User, error) {
-	type ConversationUser struct {
-		UserID      uuid.UUID
-		LastMessage time.Time
-	}
+// GetRecentConversations gets list of conversation partners ordered by last message time
+func (r *MessageRepository) GetRecentConversations(userID uuid.UUID, limit int) ([]ConversationPartner, error) {
+	var conversations []ConversationPartner
 
-	var conversations []ConversationUser
-
-	// Get user IDs with last message time
 	err := r.db.Model(&models.Message{}).
 		Select("CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as user_id, MAX(created_at) as last_message", userID).
 		Where("sender_id = ? OR receiver_id = ?", userID, userID).
@@ -114,23 +114,36 @@ func (r *MessageRepository) GetRecentConversations(userID uuid.UUID, limit int) 
 		Limit(limit).
 		Scan(&conversations).Error
 
+	return conversations, err
+}
+
+// GetLastMessageBetween returns the most recent message between two users
+func (r *MessageRepository) GetLastMessageBetween(userID1, userID2 uuid.UUID) (*models.Message, error) {
+	var message models.Message
+	err := r.db.Preload("Sender").
+		Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+			userID1, userID2, userID2, userID1).
+		Order("created_at DESC").
+		Limit(1).
+		First(&message).Error
+
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
-	// Extract user IDs
-	var userIDs []uuid.UUID
-	for _, conv := range conversations {
-		userIDs = append(userIDs, conv.UserID)
-	}
+	return &message, nil
+}
 
-	// Get user details
-	var users []models.User
-	if len(userIDs) > 0 {
-		err = r.db.Where("id IN ?", userIDs).Find(&users).Error
-	}
-
-	return users, err
+// GetUnreadCountForConversation returns unread messages count between receiver and sender
+func (r *MessageRepository) GetUnreadCountForConversation(receiverID, senderID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.Message{}).
+		Where("receiver_id = ? AND sender_id = ? AND is_read = ?", receiverID, senderID, false).
+		Count(&count).Error
+	return count, err
 }
 
 // UpdateContent updates message content and tracks previous content

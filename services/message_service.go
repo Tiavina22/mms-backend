@@ -4,11 +4,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
-
 	"mms-backend/models"
 	"mms-backend/repositories"
 	"mms-backend/utils"
+	"mms-backend/websocket"
+
+	"github.com/google/uuid"
 )
 
 // MessageService handles message business logic
@@ -17,6 +18,7 @@ type MessageService struct {
 	userRepo         *repositories.UserRepository
 	notificationRepo *repositories.NotificationRepository
 	pushService      *PushService
+	wsHub            *websocket.Hub
 }
 
 // NewMessageService creates a new message service
@@ -25,12 +27,14 @@ func NewMessageService(
 	userRepo *repositories.UserRepository,
 	notificationRepo *repositories.NotificationRepository,
 	pushService *PushService,
+	wsHub *websocket.Hub,
 ) *MessageService {
 	return &MessageService{
 		messageRepo:      messageRepo,
 		userRepo:         userRepo,
 		notificationRepo: notificationRepo,
 		pushService:      pushService,
+		wsHub:            wsHub,
 	}
 }
 
@@ -161,7 +165,23 @@ func (s *MessageService) GetConversation(userID1, userID2 uuid.UUID, limit, offs
 
 // MarkAsRead marks a message or conversation as read
 func (s *MessageService) MarkAsRead(receiverID, senderID uuid.UUID) error {
-	return s.messageRepo.MarkConversationAsRead(receiverID, senderID)
+	err := s.messageRepo.MarkConversationAsRead(receiverID, senderID)
+	if err != nil {
+		return err
+	}
+
+	// Notify sender via WebSocket that their messages have been read
+	if s.wsHub != nil {
+		readReceipt := websocket.Message{
+			Type:       "message_read",
+			SenderID:   receiverID, // The one who read the messages
+			ReceiverID: senderID,   // The one who sent the messages (to notify)
+			Timestamp:  time.Now(),
+		}
+		s.wsHub.SendToUser(senderID, &readReceipt)
+	}
+
+	return nil
 }
 
 // GetUnreadCount gets the count of unread messages for a user
@@ -170,18 +190,56 @@ func (s *MessageService) GetUnreadCount(userID uuid.UUID) (int64, error) {
 }
 
 // GetRecentConversations gets recent conversations for a user
-func (s *MessageService) GetRecentConversations(userID uuid.UUID, limit int) ([]models.PublicUser, error) {
-	users, err := s.messageRepo.GetRecentConversations(userID, limit)
+func (s *MessageService) GetRecentConversations(userID uuid.UUID, limit int) ([]models.ConversationSummary, error) {
+	partners, err := s.messageRepo.GetRecentConversations(userID, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	publicUsers := make([]models.PublicUser, 0, len(users))
-	for _, user := range users {
-		publicUsers = append(publicUsers, user.ToPublicUser())
+	summaries := make([]models.ConversationSummary, 0, len(partners))
+
+	for _, partner := range partners {
+		user, err := s.userRepo.FindByID(partner.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		summary := models.ConversationSummary{
+			User: user.ToPublicUser(),
+		}
+
+		lastMessage, err := s.messageRepo.GetLastMessageBetween(userID, partner.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		if lastMessage != nil {
+			decryptedContent, err := utils.Decrypt(lastMessage.Content)
+			if err != nil {
+				decryptedContent = "[Encrypted]"
+			}
+
+			displayContent := decryptedContent
+			if lastMessage.IsDeleted {
+				displayContent = "[message deleted]"
+			}
+
+			summary.LastMessage = displayContent
+			summary.LastMessageTime = &lastMessage.CreatedAt
+			summary.LastMessageSenderID = lastMessage.SenderID
+			summary.LastMessageIsRead = lastMessage.IsRead
+		}
+
+		unreadCount, err := s.messageRepo.GetUnreadCountForConversation(userID, partner.UserID)
+		if err != nil {
+			return nil, err
+		}
+		summary.UnreadCount = unreadCount
+
+		summaries = append(summaries, summary)
 	}
 
-	return publicUsers, nil
+	return summaries, nil
 }
 
 // EditMessage updates the content of a message
